@@ -1,0 +1,40 @@
+---
+title: "Rascunho ME712"
+author: "Gisele Amorim"
+date: "2026-03-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+```
+
+Leitura do banco 
+```{r}
+dados <- read_xlsx("Dataset.xlsx")
+head(dados)
+summary(dados)
+```
+```{r}
+dados_long <- dados %>% pivot_longer(cols = c(`Very coarse sand (%)`, `Coarse sand(%)`, `Medium sand (%)`, `Fine sand (%)`, `Very fine sand (%)`), 
+                       values_to = "valor", names_to = "Type Sand")
+```
+
+```{r}
+dados_long %>% ggplot(aes(x = `Type Sand`, y = valor, fill = `Type Sand`)) + 
+  geom_boxplot() +
+  labs(title = "Boxplot Percentual de Areia", x = "Tipo de Areia", y = "Valor") +
+  theme_minimal()
+```
+
+```{r}
+library(GGally)
+dados_long %>% select(-Sample)
+ggpairs(dados_long, lower = list(continuous = "smooth"))
+```
+
