@@ -1,4 +1,4 @@
-# ME712
+# ME712 Consultoria Estatística 
 ## Descrição do projeto 
 O objetivo da pesquisa é modelar quantitativamente o Índice de Bioturbação em uma planície de maré, avaliando como fatores abióticos influenciam a atividade biológica no sedimento. Pretende modelar a influência de preditores ambientais (físico-químico da água e do sedimento) sobre o índice de bioturbação, lidando com problemas como multicolinearidade e tamanho amostral. 
 Para a consultoria a pesquisadora espera:
