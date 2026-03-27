@@ -1,0 +1,378 @@
+---
+title: "CONSULTORIA 1"
+author: "Pedro Tosto"
+date: "2026-03-11"
+output: html_document
+---
+
+```{r}
+install.packages("tidyverse")
+install.packages("readxl")
+library(readxl)
+library(tidyverse)
+install.packages("psych")
+library(psych)
+install.packages("lme4")
+library(lme4)
+install.packages("nlme")
+install.packages("sf")
+install.packages("spdep")
+library(sf)
+library(spdep)
+library(nlme)
+install.packages("janitor")
+library(janitor)
+```
+
+```{r}
+dados = read_excel("Dataset - Nicolle e Milene.xlsx")
+
+```
+
+```{r}
+dados
+dados_janitor = clean_names(dados)
+hist(dados$`areia grossa (%)`)
+hist(dados$`areia muito grossa (%)`)
+boxplot(dados$`areia grossa (%)`)
+boxplot(dados$`areia muito grossa (%)`)
+dados_janitor
+```
+mudar o nome das variaveis latitude e longitude:
+```{r}
+dados_janitor <- dados_janitor %>%
+  rename(
+    latitude = latitude_utm,
+    longitude = longitude_utm
+  )
+
+dados_janitor <- dados_janitor %>%
+  rename(
+    ph = p_h
+  )
+
+dados_janitor$latitude <- parse_number(dados_janitor$latitude)
+dados_janitor$longitude <- parse_number(dados_janitor$longitude)
+```
+
+Verificar as correlações de nossas variáveis:
+```{r}
+library(corrplot)
+
+corrplot(cor(dados_janitor[, sapply(dados_janitor, is.numeric)]),
+         method = "color",
+         type = "upper")
+
+```
+PCA PARA GRANULOMETRIA (COLINEARIDADE PERFEITA)
+```{r}
+# Selecionando as colunas com os nomes exatos (cuidado com os espaços)
+granulo <- dados_janitor[, c(
+  "areia_muito_grossa_percent",
+  "areia_grossa_percent",
+  "areia_media_percent",
+  "areia_fina_percent",
+  "areia_muito_fina_percent",
+  "lama"
+)]
+
+# Rodando o PCA (lembre-se do ponto no scale.)
+pca <- prcomp(granulo, scale. = TRUE)
+
+# Extraindo o PC1 para o banco de dados original
+dados_janitor$PC1_granulo <- pca$x[, 1]
+```
+
+```{r}
+pca
+dados_janitor$pc1_granulo
+summary(pca) #PC1 explica 48.3% ; PC2 explica 37.5%
+#com isso percebemos a necessidade de utilziar PC1 e PC2
+#PC1 : gradiente de granulometria fina vs grossa
+#PC2 : conteúdo de lama vs areia
+```
+CRIAR PC2 AGORA:
+```{r}
+dados_janitor$pc2_granulo <- pca$x[,2]
+dados_janitor
+```
+
+
+
+```{r}
+dados_janitor$PC1_granulo <- pca$x[,1]
+pca$x[,1]
+#esses 51 valores mostram se o solo eh mais arenoso ou mais lamaçento (dependendo do quao positivo ou negativo sao --> os números negativos representam os solos lamosos, e os positivos representam os solos arenosos.)
+```
+
+
+FAZENOD UMA ANALISE EXPLORATÓRIA MAIS BEM FEITA: ENTENDER OS DADOS
+```{r}
+hist(dados_janitor$indice_de_bioturbacao_percent)
+boxplot(dados_janitor$indice_de_bioturbacao_percent)
+```
+
+```{r}
+plot(dados_janitor$longitude, dados_janitor$latitude,
+     col=cut(dados_janitor$indice_de_bioturbacao_percent,5),
+     pch=19)
+```
+```{r}
+pairs(dados_janitor[, c(
+  "indice_de_bioturbacao_percent",
+  "salinidade_ppm",
+  "oxigenio_dissolvido_od_mg_l",
+  "ph",
+  "materia_organica_percent"
+)])
+```
+PERCEBEMOS QUE O MODELO LINEAR NAO FUNCIONARÁ AQUI DIREITO, VAMOS AGORA LEVAR EM CONTA O O ESPAÇO EXPLICITAMENTE:
+```{r}
+plot(dados_janitor$longitude, dados_janitor$indice_de_bioturbacao_percent)
+plot(dados_janitor$latitude, dados_janitor$indice_de_bioturbacao_percent)
+```
+TESTE DE VERIFICAÇÃO SE HA REALMENTE GRUPOS
+```{r}
+unique(dados_janitor$longitude)
+length(unique(dados_janitor$longitude))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Como agora possuímos dados para fazer uma análise ESPACIAL (possuímos Latitude e Longitude) --> 
+1- Criaremos um objeto espacial (uma matriz de coordenadas x,y)
+```{r}
+coords = dados_janitor %>%
+  select(latitude, longitude)
+
+coords = as.matrix(coords)
+
+#a matriz coords está como char ao inves de numeric, basta rodar isso para limpar e virar numeric:
+coords <- gsub("[ a-zA-Z]", "", coords)
+mode(coords) <- "numeric"
+```
+2- criar uma vizinhança (saber quem esta por perto de quem, com base nas coordenadas das amostras, dependencia é local --> queremos saber quais amostras sao proximas entre si)
+K-nearest-Neighbor
+```{r}
+viz = knearneigh(coords, k = 4) #Para cada ponto, encontra os 4 vizinhos mais próximos
+
+viz_nb = knn2nb(viz) #Converte isso em uma estrutura de vizinhança
+
+lw = nb2listw(viz_nb) #Cria pesos espaciais
+```
+Faremos agora um teste de Autocorrelação espacial (Moran I) para responder --> Valores próximos no espaço são parecidos?
+se I > 0 --> parecidos | I < 0 --> diferentes | I = 0 sem estrutura espacial
+basicamente um teste de hipoteses
+```{r}
+moran.test(dados_janitor$indice_de_bioturbacao_percent, lw)
+#com esses resultados, rejeitamos completamente a hipótese de independencia (como esperávamos) --> EXISTE autocorrelação espacial muito forte nos dados (I = 0.695)
+
+#com isso afirmamos tambem que o modelo "lm" nao eh valido, pois depende de independencia
+```
+
+AGORA QUE SABEMOS DA DEPENDÊNCIA, VAMOS COMEÇAR A MODELAR:
+o caminho que seguiremos será:
+1. Construir variáveis (PC1, PC2) JA FOI FEITO
+2. Definir modelo base (sem espaço)
+3. Definir modelo misto (estrutura discreta)
+4. Definir modelo espacial (estrutura contínua)
+5. Comparar modelos
+6. Validar modelo final (resíduos + Moran)
+
+2. modelo base de referência (SERVE APENAS PARA COMPARAÇÃO COM O MODELO REAL QUE USAREMOS, QUE É O ESPACIAL):
+```{r}
+modelo_lm <- lm(
+  indice_de_bioturbacao_percent ~ 
+    pc1_granulo + pc2_granulo +
+    salinidade_ppm +
+    oxigenio_dissolvido_od_mg_l +
+    ph +
+    materia_organica_percent,
+  data = dados_janitor
+)
+
+modelo_lm
+```
+3. MODELO MISTO: MESMA COISA DO ANTERIOR, APENAS PARA COMPARAR
+```{r}
+modelo_misto <- lmer(
+  `ìndice de bioturbação (%)` ~ 
+    PC1_granulo + PC2_granulo +
+    `Salinidade (ppm)` + 
+    `oxigênio dissolvido (OD) (mg/l)` +
+    pH +
+    `materia orgânica (%)` +
+    (1 | Local),
+  data = dados
+)
+modelo_misto
+```
+4. MODELO ESPACIAL (O QUE PROVAVELMENTE SERÁ O MELHOR):
+```{r}
+modelo_exp <- lme(
+  indice_de_bioturbacao_percent ~ 
+    pc1_granulo + pc2_granulo +
+    salinidade_ppm +
+    oxigenio_dissolvido_od_mg_l +
+    ph +
+    materia_organica_percent,
+  
+  random = ~1 | local,
+  
+  correlation = corExp(
+    form = ~ latitude + longitude
+  ),
+  
+  data = dados_janitor,
+  method = "REML"
+)
+
+modelo_exp
+#“pontos próximos são correlacionados?” essa é a pergunta que queremos responder
+
+#oxigenio dissolvido teve efeito positivo moderado (1.34) --> ou seja, o teste nos diz que: MAIS O2 --> MAIS BIOTURBAÇÃO
+
+#PH tem efeito negativo MUITO forte (-18.62) --> é bom pesquisar/discutir sobre (pode ser artefato)
+
+#RANDOM EFFECTS: 0.022 --> variação entre locais é aprox. zero
+#esse teste nos diz: agrupamento local não está explicando nada, ou seja 1- Mal definido OU 2- realmente não há efeito.
+
+#Range = 4.86 --> pontos ate 4.86 unidades de distância ainda são correlacionados (nao sei dizer se metros ou se tem a ver com o utm da latitude/longitude)
+#obs: range confirma teste de moran (range é diferente de 0)
+
+#variaveis explicam pouco, e ha um grande erro residual (24.7)
+```
+MODELO GAUSS:
+```{r}
+modelo_gaus <- lme(
+  indice_de_bioturbacao_percent ~ 
+    pc1_granulo + pc2_granulo +
+    salinidade_ppm +
+    oxigenio_dissolvido_od_mg_l +
+    ph +
+    materia_organica_percent,
+  
+  random = ~1 | local,
+  
+  correlation = corGaus(
+    form = ~ latitude + longitude
+  ),
+  
+  data = dados_janitor,
+  method = "REML"
+)
+```
+MODELO SPHER:
+```{r}
+modelo_spher <- lme(
+  indice_de_bioturbacao_percent ~ 
+    pc1_granulo + pc2_granulo +
+    salinidade_ppm +
+    oxigenio_dissolvido_od_mg_l +
+    ph +
+    materia_organica_percent,
+  
+  random = ~1 | local,
+  
+  correlation = corSpher(
+    form = ~ latitude + longitude
+  ),
+  
+  data = dados_janitor,
+  method = "REML"
+)
+```
+
+
+VAMOS AGORA FAZER UM AIC PARA COMPARAR OS MODELOS:
+```{r}
+AIC(modelo_exp, modelo_gaus, modelo_spher)
+#gauss deu como o melhor (menor aic)
+```
+TESTAR MORAN NOS RESIDUOS PARA VER SE SAO SIGNIFICATIVOS (MODELO RUIM):
+```{r}
+moran.test(resid(modelo_gaus), lw)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
