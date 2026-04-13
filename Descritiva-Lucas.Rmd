@@ -1,0 +1,187 @@
+<<<<<<< HEAD
+---
+title: "Rascunho ME712"
+author: "Gisele Amorim"
+date: "2026-03-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(corr)
+```
+
+Leitura do banco 
+```{r}
+dados <- read_xlsx("data_coord.xlsx")
+head(dados)
+summary(dados)
+colnames(dados)
+```
+```{r}
+dados_long <- dados %>% pivot_longer(cols = c(`areia muito grossa (%)`, `areia grossa (%)`, `areia média (%)`, `areia fina (%)`, `areia muito fina (%)`, lama), 
+                       values_to = "valor", names_to = "Type Sand")
+
+ordem <- c("areia muito grossa (%)", 
+                     "areia grossa (%)", 
+                     "areia média (%)", 
+                     "areia fina (%)", 
+                     "areia muito fina (%)", 
+                     "lama")
+
+dados_long$`Type Sand`<- factor(dados_long$`Type Sand`, levels = ordem)
+```
+
+```{r}
+dados_long %>% ggplot(aes(x = `Type Sand`, y = valor, fill = `Type Sand`)) + 
+  geom_boxplot() +
+  labs(title = "Boxplot granulometria", x = "Tipo de Areia", y = "Valor") +
+  theme_minimal()
+```
+```{r}
+dados_coord <- read_xlsx("dados_coord.xlsx")
+colnames(dados_coord)
+```
+```{r}
+colnames(dados_coord) <- trimws(colnames(dados_coord))
+```
+
+```{r}
+vars <- c("ìndice de bioturbação (%)", "materia orgânica (%)", 
+          "Salinidade (ppm)", "oxigênio dissolvido (OD) (mg/l)", "pH",
+          "areia muito grossa (%)", "areia grossa (%)", "areia média (%)", 
+          "areia fina (%)", "areia muito fina (%)", "lama")
+
+matriz_corr <- cor(dados[, vars], method = "pearson", use = "complete.obs")
+
+library(ggcorrplot)
+ggcorrplot(matriz_corr,
+           type = "upper",
+           lab = TRUE,
+           lab_size = 3,
+           colors = c("brown1", "aliceblue", "blue4"),
+           title = "Correlação de Pearson - Fatores abióticos")
+```
+Gráfico de correlação: as variáveis que apresentaram maiores correlações foram 
+- lama, areia muito fina e areia fina: indicaram uma correlação negativa bastante significativa, o aumento da concentração de lama está associado na  diminuição da areia fina e muito fina 
+- areia fina e muito fina: correlação positiva, como esperado maiores concentrações de areia fina estão associadas a maiores concentrações de areia muito fina
+- areia grossa e muito grossa:  correlação positiva, como esperado maiores concentrações de areia grossa estão associadas a maiores concentrações de areia muito grossa
+```{r}
+library(GGally)
+ggpairs(dados, columns = c("ìndice de bioturbação (%)", "lama", "materia orgânica (%)", "Salinidade (ppm)"))
+
+```
+```{r}
+ggpairs(dados, columns = c("ìndice de bioturbação (%)", "lama", 
+                           "areia muito fina (%)", "areia fina (%)"))
+```
+Indice de bioturbação nos locais estudados 
+- Bertioga, Iguapé e Itaguaré
+
+Interpretação visual: há maiores indices de bioturbação em Itaguaré, com uma mediana bastante elevada
+```{r}
+ggplot(dados, aes(x = Local, y = `ìndice de bioturbação (%)`, fill = Local)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.1) +
+  theme_minimal()
+```
+
+=======
+---
+title: "Rascunho ME712"
+author: "Gisele Amorim"
+date: "2026-03-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(corr)
+```
+
+Leitura do banco 
+```{r}
+dados <- read_xlsx("data_coord.xlsx")
+head(dados)
+summary(dados)
+colnames(dados)
+```
+```{r}
+dados_long <- dados %>% pivot_longer(cols = c(`areia muito grossa (%)`, `areia grossa (%)`, `areia média (%)`, `areia fina (%)`, `areia muito fina (%)`, lama), 
+                       values_to = "valor", names_to = "Type Sand")
+
+ordem <- c("areia muito grossa (%)", 
+                     "areia grossa (%)", 
+                     "areia média (%)", 
+                     "areia fina (%)", 
+                     "areia muito fina (%)", 
+                     "lama")
+
+dados_long$`Type Sand`<- factor(dados_long$`Type Sand`, levels = ordem)
+```
+
+```{r}
+dados_long %>% ggplot(aes(x = `Type Sand`, y = valor, fill = `Type Sand`)) + 
+  geom_boxplot() +
+  labs(title = "Boxplot granulometria", x = "Tipo de Areia", y = "Valor") +
+  theme_minimal()
+```
+```{r}
+dados_coord <- read_xlsx("dados_coord.xlsx")
+colnames(dados_coord)
+```
+```{r}
+colnames(dados_coord) <- trimws(colnames(dados_coord))
+```
+
+```{r}
+vars <- c("ìndice de bioturbação (%)", "materia orgânica (%)", 
+          "Salinidade (ppm)", "oxigênio dissolvido (OD) (mg/l)", "pH",
+          "areia muito grossa (%)", "areia grossa (%)", "areia média (%)", 
+          "areia fina (%)", "areia muito fina (%)", "lama")
+
+matriz_corr <- cor(dados[, vars], method = "pearson", use = "complete.obs")
+
+library(ggcorrplot)
+ggcorrplot(matriz_corr,
+           type = "upper",
+           lab = TRUE,
+           lab_size = 3,
+           colors = c("brown1", "aliceblue", "blue4"),
+           title = "Correlação de Pearson - Fatores abióticos")
+```
+Gráfico de correlação: as variáveis que apresentaram maiores correlações foram 
+- lama, areia muito fina e areia fina: indicaram uma correlação negativa bastante significativa, o aumento da concentração de lama está associado na  diminuição da areia fina e muito fina 
+- areia fina e muito fina: correlação positiva, como esperado maiores concentrações de areia fina estão associadas a maiores concentrações de areia muito fina
+- areia grossa e muito grossa:  correlação positiva, como esperado maiores concentrações de areia grossa estão associadas a maiores concentrações de areia muito grossa
+```{r}
+library(GGally)
+ggpairs(dados, columns = c("ìndice de bioturbação (%)", "lama", "materia orgânica (%)", "Salinidade (ppm)"))
+
+```
+```{r}
+ggpairs(dados, columns = c("ìndice de bioturbação (%)", "lama", 
+                           "areia muito fina (%)", "areia fina (%)"))
+```
+Indice de bioturbação nos locais estudados 
+- Bertioga, Iguapé e Itaguaré
+
+Interpretação visual: há maiores indices de bioturbação em Itaguaré, com uma mediana bastante elevada
+```{r}
+ggplot(dados, aes(x = Local, y = `ìndice de bioturbação (%)`, fill = Local)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.1) +
+  theme_minimal()
+```
+
+>>>>>>> eb8ea5d50e852e7bf173b2626f65fe164dcc6ac2
