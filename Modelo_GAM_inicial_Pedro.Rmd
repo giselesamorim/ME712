@@ -1,0 +1,83 @@
+---
+title: "Modelo Final Consultoria"
+author: "Pedro Tosto"
+date: "2026-04-10"
+output: html_document
+---
+```{r}
+
+library(readxl)
+library(tidyverse)
+library(janitor)
+library(spdep) 
+library(mgcv)  
+
+#IMPORTAÇÃO E LIMPEZA DE DADOS
+dados <- read_excel("Dataset - Nicolle e Milene.xlsx")
+dados_janitor <- clean_names(dados)
+
+# Padronização de nomes e conversão de coordenadas para numérico
+dados_janitor <- dados_janitor %>%
+  rename(
+    latitude = latitude_utm,
+    longitude = longitude_utm,
+    ph = p_h
+  )
+
+dados_janitor$latitude <- parse_number(dados_janitor$latitude)
+dados_janitor$longitude <- parse_number(dados_janitor$longitude)
+
+#REDUÇÃO DE DIMENSIONALIDADE (PCA - Granulometria)
+# Justificativa: Eliminar a colinearidade perfeita entre as frações do sedimento
+granulo <- dados_janitor[, c("areia_muito_grossa_percent", "areia_grossa_percent", 
+                             "areia_media_percent", "areia_fina_percent", 
+                             "areia_muito_fina_percent", "lama")]
+
+pca <- prcomp(granulo, scale. = TRUE)
+
+#Salvando os componentes principais no banco de dados
+dados_janitor$pc1_granulo <- pca$x[, 1]
+dados_janitor$pc2_granulo <- pca$x[, 2]
+
+#DIAGNÓSTICO ESPACIAL PRÉ-MODELAGEM
+#Justificativa: Provar a existência de dependência espacial para descartar modelos lineares simples (lm)
+coords <- as.matrix(dados_janitor[, c("longitude", "latitude")])
+viz <- knearneigh(coords, k = 6)
+viz_nb <- knn2nb(viz)
+lw <- nb2listw(viz_nb)
+
+# Teste de Moran na variável resposta
+# I = 0.695 (p < 0.05) -> Confirma forte autocorrelação espacial
+moran.test(dados_janitor$indice_de_bioturbacao_percent, lw)
+
+# MODELO DEFINITIVO (GAM)
+# Nota metodológica: Após seleção automática e checagem de concurvidade, as 
+# variáveis de qualidade da água (pH, OD, Salinidade) e de granulometria (PC1, PC2) 
+# foram excluídas. O modelo final retém apenas os fatores estruturantes significativos: 
+# Espaço (Latitude/Longitude) e Matéria Orgânica.
+modelo_definitivo <- gam(
+  indice_de_bioturbacao_percent ~ 
+    s(latitude, longitude, k = 10) +
+    s(materia_organica_percent),
+  
+  data = dados_janitor,
+  method = "REML"
+)
+
+#RESULTADOS E VALIDAÇÃO DO MODELO
+#Extração de coeficientes, edf e R-quadrado
+summary(modelo_definitivo)
+
+#Checagem das premissas matemáticas do GAM (distribuição de resíduos e k-index)
+gam.check(modelo_definitivo)
+
+#Prova final: Teste de Moran nos resíduos do modelo ajustado
+#p > 0.05 -> Confirma que o termo s(lat, lon) limpou a dependência espacial com sucesso
+moran.test(resid(modelo_definitivo), lw)
+
+#RÁFICOS 
+#Gráficos de efeitos parciais (Superfície Espacial e Curva de Matéria Orgânica)
+plot(modelo_definitivo, pages = 1, all.terms = TRUE, shade = TRUE)
+```
+
+fazer o plot do grafico da direita em relaçao a bioturbação
