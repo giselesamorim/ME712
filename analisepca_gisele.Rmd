@@ -1,0 +1,349 @@
+---
+title: "Análise de Componentes Principais (PCA)"
+author: "Gisele Amorim"
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 8,
+  fig.height = 5
+)
+```
+
+# Objetivo da análise
+
+O objetivo desta análise é aplicar a Análise de Componentes Principais (PCA/ACP) às variáveis de granulometria do conjunto de dados. A PCA será usada para reduzir a dimensionalidade das variáveis granulométricas e identificar os principais gradientes de variação entre as amostras.
+
+As variáveis consideradas são:
+
+- areia muito grossa (%);
+- areia grossa (%);
+- areia média (%);
+- areia fina (%);
+- areia muito fina (%);
+- lama.
+
+Como essas variáveis estão em porcentagem e podem apresentar amplitudes diferentes, a PCA será feita com centralização e padronização dos dados (`center = TRUE` e `scale. = TRUE`).
+
+# Pacotes utilizados
+
+```{r pacotes}
+library(readxl)
+library(janitor)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+library(tibble)
+```
+
+# Importação e organização dos dados
+
+No arquivo original, os nomes das colunas começam na segunda linha da planilha. Por isso, usa-se `skip = 1` na leitura do Excel.
+
+```{r importacao}
+dados <- read_excel("Dataset_final.xlsx", sheet = "dados", skip = 1)
+
+# Limpeza dos nomes das colunas e remoção de linhas/colunas vazias
+dados_janitor <- dados %>%
+  remove_empty("cols") %>%
+  remove_empty("rows") %>%
+  clean_names() %>%
+  rename(
+    latitude  = latitude_utm,
+    longitude = longitude_utm,
+    ph        = p_h
+  ) %>%
+  mutate(
+    latitude  = parse_number(as.character(latitude)),
+    longitude = parse_number(as.character(longitude))
+  )
+
+head(dados_janitor)
+```
+
+Após a limpeza, é importante conferir os nomes das colunas para garantir que as variáveis de granulometria foram reconhecidas corretamente.
+
+```{r nomes_colunas}
+names(dados_janitor)
+```
+
+# Seleção das variáveis de granulometria
+
+```{r selecao_granulometria}
+granulo <- dados_janitor %>%
+  select(
+    areia_muito_grossa_percent,
+    areia_grossa_percent,
+    areia_media_percent,
+    areia_fina_percent,
+    areia_muito_fina_percent,
+    lama
+  ) %>%
+  mutate(across(everything(), ~ parse_number(as.character(.x))))
+
+head(granulo)
+summary(granulo)
+```
+
+# Verificação de dados ausentes
+
+Antes da PCA, é necessário verificar se existem valores ausentes. A função `prcomp()` não roda corretamente com `NA`.
+
+```{r verificacao_na}
+colSums(is.na(granulo))
+```
+
+# Matriz de correlação
+
+A matriz de correlação ajuda a entender a relação entre as variáveis granulométricas antes da PCA. Como a PCA foi feita com dados padronizados, ela equivale a uma PCA baseada na matriz de correlação.
+
+```{r correlacao}
+matriz_cor <- cor(granulo)
+round(matriz_cor, 3)
+```
+
+```{r grafico_correlacao}
+matriz_cor_long <- as.data.frame(matriz_cor) %>%
+  rownames_to_column("variavel_1") %>%
+  pivot_longer(-variavel_1, names_to = "variavel_2", values_to = "correlacao")
+
+ggplot(matriz_cor_long, aes(x = variavel_1, y = variavel_2, fill = correlacao)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(correlacao, 2)), size = 3) +
+  scale_fill_gradient2(limits = c(-1, 1)) +
+  labs(
+    title = "Matriz de correlação das variáveis granulométricas",
+    x = NULL,
+    y = NULL,
+    fill = "Correlação"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# Aplicação da PCA
+
+A PCA foi aplicada com centralização e padronização das variáveis.
+
+```{r pca}
+pca <- prcomp(
+  granulo,
+  center = TRUE,
+  scale. = TRUE
+)
+
+summary(pca)
+```
+
+# Autovalores e variância explicada
+
+Os autovalores indicam a quantidade de variância explicada por cada componente principal. A proporção de variância mostra quanto cada componente representa da variação total dos dados.
+
+```{r autovalores}
+autovalores <- pca$sdev^2
+prop_var <- autovalores / sum(autovalores)
+prop_acum <- cumsum(prop_var)
+
+tabela_autovalores <- round(
+  cbind(
+    Autovalor = autovalores,
+    Variancia = prop_var,
+    Acumulada = prop_acum
+  ),
+  3
+)
+
+tabela_autovalores
+```
+
+Uma regra prática comum é observar os componentes com autovalor maior que 1, pois eles explicam mais variância do que uma variável original padronizada. Além disso, também é comum manter componentes suficientes para explicar uma proporção acumulada alta da variância, por exemplo, acima de 70% ou 80%.
+
+# Scree plot
+
+O scree plot permite visualizar a queda dos autovalores ao longo dos componentes principais.
+
+```{r screeplot_base}
+screeplot(
+  pca,
+  type = "lines",
+  main = "Scree plot - PCA das variáveis granulométricas"
+)
+abline(h = 1, col = "red", lty = 2)
+```
+
+Também é possível visualizar a variância explicada por componente em formato de gráfico de barras.
+
+```{r screeplot_ggplot}
+df_variancia <- data.frame(
+  CP = paste0("CP", seq_along(prop_var)),
+  Variancia = prop_var,
+  Acumulada = prop_acum
+)
+
+ggplot(df_variancia, aes(x = CP, y = Variancia)) +
+  geom_col() +
+  geom_line(aes(y = Acumulada, group = 1), linewidth = 1) +
+  geom_point(aes(y = Acumulada), size = 2) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    title = "Variância explicada e variância acumulada",
+    x = "Componente principal",
+    y = "Proporção da variância"
+  ) +
+  theme_minimal()
+```
+
+# Cargas fatoriais das componentes principais
+
+As cargas indicam o peso de cada variável original em cada componente principal. Variáveis com maiores valores absolutos contribuem mais para a formação da componente.
+
+```{r cargas}
+cargas <- round(pca$rotation[, 1:2], 3)
+cargas
+```
+
+Para facilitar a interpretação, podemos transformar as cargas em uma tabela organizada.
+
+```{r tabela_cargas}
+tabela_cargas <- as.data.frame(pca$rotation[, 1:2]) %>%
+  rownames_to_column("variavel") %>%
+  rename(
+    CP1 = PC1,
+    CP2 = PC2
+  ) %>%
+  mutate(
+    abs_CP1 = abs(CP1),
+    abs_CP2 = abs(CP2)
+  ) %>%
+  arrange(desc(abs_CP1))
+
+tabela_cargas
+```
+
+# Escores das amostras
+
+Os escores representam a posição de cada amostra no novo sistema de eixos formado pelas componentes principais.
+
+```{r escores}
+escores <- as.data.frame(pca$x) %>%
+  bind_cols(dados_pca_aux %>% select(local, morfologia, amostra))
+
+head(escores)
+```
+
+
+# Biplot
+
+O biplot apresenta simultaneamente as amostras e as variáveis. As setas indicam a direção de maior aumento das variáveis granulométricas.
+
+```{r biplot_base}
+png("biplot_pca_granulometria.png", width = 1600, height = 1200, res = 200)
+
+biplot(
+  pca,
+  choices = 1:2,
+  main = "Biplot - PCA das variáveis granulométricas"
+)
+
+dev.off()
+```
+```{r}
+png("biplot_pca.png", width = 1600, height = 1200, res = 200)
+colnames(granulo) <- c("AMG", "AG", "AM", "AF", "AMF", "L")
+
+# PCA
+pca <- prcomp(granulo, scale. = TRUE)
+
+# variância explicada
+var_exp <- 100 * pca$sdev^2 / sum(pca$sdev^2)
+
+# configuração gráfica
+par(mfrow = c(1,1),bg = "white",mar = c(5,5,4,7))
+
+# biplot
+biplot(
+  pca, xlabs = 1:nrow(granulo), ylabs = colnames(granulo),
+  cex = c(0.7, 1.1),
+  col = c("black", "red"),
+  scale = 0,
+  expand = 1,
+  xlab = paste0("Comp.1 (",round(var_exp[1],1),"%)"),
+  ylab = paste0("Comp.2 (",round(var_exp[2],1),"%)")
+)
+
+# caixa ao redor
+box()
+dev.off()
+```
+
+# Biplot personalizado com ggplot2
+
+```{r biplot_ggplot}
+# Escores das amostras
+scores_plot <- as.data.frame(pca$x[, 1:2]) %>%
+  bind_cols(escores %>% select(local, morfologia, amostra))
+
+# Cargas das variáveis
+loadings_plot <- as.data.frame(pca$rotation[, 1:2]) %>%
+  rownames_to_column("variavel")
+
+# Fator para ajustar o tamanho das setas no gráfico
+mult <- min(
+  (max(scores_plot$PC1) - min(scores_plot$PC1)) / (max(loadings_plot$PC1) - min(loadings_plot$PC1)),
+  (max(scores_plot$PC2) - min(scores_plot$PC2)) / (max(loadings_plot$PC2) - min(loadings_plot$PC2))
+) * 0.7
+
+ggplot(scores_plot, aes(x = PC1, y = PC2, color = morfologia)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_point(size = 3) +
+  geom_segment(
+    data = loadings_plot,
+    aes(x = 0, y = 0, xend = PC1 * mult, yend = PC2 * mult),
+    inherit.aes = FALSE,
+    arrow = grid::arrow(length = grid::unit(0.25, "cm"))
+  ) +
+  geom_text(
+    data = loadings_plot,
+    aes(x = PC1 * mult * 1.08, y = PC2 * mult * 1.08, label = variavel),
+    inherit.aes = FALSE,
+    size = 3
+  ) +
+  labs(
+    title = "Biplot personalizado - PCA das variáveis granulométricas",
+    x = paste0("CP1 (", round(prop_var[1] * 100, 1), "% da variância)"),
+    y = paste0("CP2 (", round(prop_var[2] * 100, 1), "% da variância)"),
+    color = "Morfologia"
+  ) +
+  theme_minimal()
+```
+
+# Interpretação dos resultados
+
+A interpretação deve considerar principalmente:
+
+1. **Variância explicada**: verificar quanto CP1 e CP2 explicam da variação total dos dados. Se a variância acumulada de CP1 + CP2 for alta, o plano bidimensional representa bem a estrutura dos dados.
+
+2. **Autovalores**: componentes com autovalores acima de 1 podem ser considerados mais relevantes pela regra de Kaiser.
+
+3. **Cargas das variáveis**: variáveis com maiores cargas absolutas em CP1 ou CP2 são as que mais contribuem para cada eixo.
+
+4. **Posição das amostras**: amostras próximas no gráfico possuem composição granulométrica semelhante; amostras distantes possuem composições mais diferentes.
+
+5. **Direção das setas no biplot**: amostras posicionadas na direção de uma seta tendem a apresentar maior valor daquela variável.
+
+Com base nos dados analisados, espera-se que as primeiras componentes resumam grande parte da variação granulométrica. A CP1 tende a representar um contraste entre frações mais finas/lamosas e frações arenosas, enquanto a CP2 pode representar diferenças internas entre classes de areia, como areia média, grossa e muito grossa. A interpretação final deve ser feita observando os sinais e magnitudes das cargas em `pca$rotation`, lembrando que o sinal da componente pode ser invertido sem alterar o significado estatístico da PCA.
+
+# Texto modelo para colocar no relatório
+
+A Análise de Componentes Principais foi aplicada às variáveis granulométricas com o objetivo de sintetizar a variação da composição sedimentar das amostras. As variáveis foram previamente padronizadas, uma vez que a PCA foi conduzida com `center = TRUE` e `scale. = TRUE`. Foram utilizadas as frações areia muito grossa, areia grossa, areia média, areia fina, areia muito fina e lama.
+
+Os autovalores e a proporção de variância explicada indicaram que as primeiras componentes concentraram a maior parte da variabilidade dos dados. A análise das cargas fatoriais permitiu identificar quais frações granulométricas mais contribuíram para a formação de cada componente. No biplot, amostras próximas apresentaram maior similaridade granulométrica, enquanto amostras distantes indicaram diferenças mais expressivas na composição dos sedimentos.
+
+A primeira componente principal pode ser interpretada como um gradiente associado às diferenças entre as principais frações granulométricas, enquanto a segunda componente representa uma variação secundária entre as classes de areia e lama. Dessa forma, a PCA mostrou-se útil para resumir o padrão granulométrico das amostras e auxiliar na identificação de agrupamentos relacionados às características sedimentares.
+
