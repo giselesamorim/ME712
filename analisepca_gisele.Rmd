@@ -231,8 +231,13 @@ Os escores representam a posição de cada amostra no novo sistema de eixos form
 
 ```{r escores}
 escores <- as.data.frame(pca$x) %>%
-  bind_cols(dados_pca_aux %>% select(local, morfologia, amostra))
+  bind_cols(dados_janitor %>% select(local, morfologia, amostra))
 
+head(escores)
+```
+
+```{r}
+escores <- as.data.frame(pca$x)
 head(escores)
 ```
 
@@ -339,11 +344,91 @@ A interpretação deve considerar principalmente:
 
 Com base nos dados analisados, espera-se que as primeiras componentes resumam grande parte da variação granulométrica. A CP1 tende a representar um contraste entre frações mais finas/lamosas e frações arenosas, enquanto a CP2 pode representar diferenças internas entre classes de areia, como areia média, grossa e muito grossa. A interpretação final deve ser feita observando os sinais e magnitudes das cargas em `pca$rotation`, lembrando que o sinal da componente pode ser invertido sem alterar o significado estatístico da PCA.
 
-# Texto modelo para colocar no relatório
+Análises das demais variáveis com as primeiras componentes principais
+```{r}
+colnames(dados_janitor)
+```
 
-A Análise de Componentes Principais foi aplicada às variáveis granulométricas com o objetivo de sintetizar a variação da composição sedimentar das amostras. As variáveis foram previamente padronizadas, uma vez que a PCA foi conduzida com `center = TRUE` e `scale. = TRUE`. Foram utilizadas as frações areia muito grossa, areia grossa, areia média, areia fina, areia muito fina e lama.
+```{r}
+# Seleção das variáveis ambientais
+variaveis_ambientais <- dados_janitor %>%
+  select(
+    oxigenio_dissolvido_od_mg_l,
+    ph,
+    salinidade_ppm,
+    materia_organica_percent, 
+    indice_de_bioturbacao_percent) %>%
+  mutate(across(everything(), ~ parse_number(as.character(.x))))
 
-Os autovalores e a proporção de variância explicada indicaram que as primeiras componentes concentraram a maior parte da variabilidade dos dados. A análise das cargas fatoriais permitiu identificar quais frações granulométricas mais contribuíram para a formação de cada componente. No biplot, amostras próximas apresentaram maior similaridade granulométrica, enquanto amostras distantes indicaram diferenças mais expressivas na composição dos sedimentos.
+# Junção com os escores da PCA
+dados_ambientais_pca <- bind_cols(
+  escores,
+  variaveis_ambientais
+)
 
-A primeira componente principal pode ser interpretada como um gradiente associado às diferenças entre as principais frações granulométricas, enquanto a segunda componente representa uma variação secundária entre as classes de areia e lama. Dessa forma, a PCA mostrou-se útil para resumir o padrão granulométrico das amostras e auxiliar na identificação de agrupamentos relacionados às características sedimentares.
+head(dados_ambientais_pca)
+```
+
+```{r}
+# Correlação entre componentes principais e variáveis ambientais
+correlacoes_pca <- cor(
+  dados_ambientais_pca %>%
+    select(PC1, PC2,
+           oxigenio_dissolvido_od_mg_l,
+           ph,
+           salinidade_ppm,
+           materia_organica_percent, 
+           indice_de_bioturbacao_percent),
+  use = "complete.obs"
+)
+
+round(correlacoes_pca, 3)
+```
+```{r}
+library(ggcorrplot)
+library(ggplot2)
+library(dplyr)
+
+# Seleção das variáveis na ordem desejada
+dados_corr <- dados_ambientais_pca %>%
+  select(PC1, PC2, oxigenio_dissolvido_od_mg_l,
+         ph, salinidade_ppm, materia_organica_percent,
+         indice_de_bioturbacao_percent)
+
+# Renomeando variáveis
+colnames(dados_corr) <- c("CP1","CP2","Oxigênio dissolvido (mg/L)", 
+                          "pH", "Salinidade (ppm)", "Matéria orgânica (%)",
+                          "Índice de bioturbação (%)")
+
+# Matriz de correlação
+matriz_corr_pca <- cor(dados_corr, method = "pearson",
+                       use = "pairwise.complete.obs")
+
+# Gráfico
+correlacao_pca <- ggcorrplot(matriz_corr_pca, type = "upper",lab = TRUE,
+                             lab_size = 4,
+                             colors = c("#779BAD", "#ECE9DF", "#DC8672"),
+                             outline.color = "white",
+                             hc.order = FALSE) +
+
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_blank(),axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.x = element_text(
+          angle = 45,
+          hjust = 1,
+          vjust = 1,
+          size = 12,
+          face = "bold"),
+        axis.text.y = element_text(size = 12,face = "bold"),
+        panel.grid = element_blank())
+
+# Exibir gráfico
+correlacao_pca
+
+# Salvar figura
+ggsave("correlacao_pca_ambiental.png", plot = correlacao_pca,
+       width = 9, height = 7, dpi = 300)
+```
 
